@@ -1,0 +1,63 @@
+name: Deploy to Elastic Beanstalk
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore src/CryptoApi.csproj
+
+      - name: Build
+        run: dotnet build src/CryptoApi.csproj -c Release --no-restore
+
+      - name: Publish
+        run: dotnet publish src/CryptoApi.csproj -c Release -o publish
+
+      - name: Zip artifact
+        run: |
+          cd publish
+          zip -r ../app.zip .
+          cd ..
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload to S3
+        run: |
+          VERSION=${GITHUB_SHA}
+          aws s3 cp app.zip s3://${{ secrets.EB_S3_BUCKET }}/app-${VERSION}.zip
+
+      - name: Create EB application version
+        run: |
+          VERSION=${GITHUB_SHA}
+          aws elasticbeanstalk create-application-version \
+            --application-name "${{ secrets.EB_APPLICATION_NAME }}" \
+            --version-label "${VERSION}" \
+            --source-bundle S3Bucket="${{ secrets.EB_S3_BUCKET }}",S3Key="app-${VERSION}.zip"
+
+      - name: Deploy to EB environment
+        run: |
+          VERSION=${GITHUB_SHA}
+          aws elasticbeanstalk update-environment \
+            --environment-name "${{ secrets.EB_ENVIRONMENT_NAME }}" \
+            --version-label "${VERSION}"
