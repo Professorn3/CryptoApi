@@ -52,3 +52,7 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# .NET build artifacts ska inte finnas med i repot i git.
+**/bin/
+**/obj/
